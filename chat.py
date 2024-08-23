@@ -1,15 +1,14 @@
-import streamlit as st
 import os
-from dotenv import load_dotenv
-from langchain_google_genai import GoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
-from langchain.vectorstores import Chroma
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 import tempfile
+import streamlit as st
+from dotenv import load_dotenv
+from langchain.vectorstores import Chroma
+from langchain_core.prompts import PromptTemplate
+from langchain.document_loaders import PyPDFLoader
+from langchain_google_genai import GoogleGenerativeAI
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.chains import RetrievalQA
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 # Load environment variables
 load_dotenv()
@@ -42,14 +41,13 @@ PROMPT = PromptTemplate.from_template(prompt_template)
 # Create a retrieval QA chain
 @st.cache_resource
 def create_qa_chain(_vectorstore):
-    retriever = _vectorstore.as_retriever()
-    rag_chain = (
-        {"context": retriever, "question": RunnablePassthrough()}
-        | PROMPT
-        | llm
-        | StrOutputParser()
+    return RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=_vectorstore.as_retriever(),
+        return_source_documents=True,
+        chain_type_kwargs={"prompt": PROMPT}
     )
-    return rag_chain
 
 qa = create_qa_chain(loaded_vectorstore)
 
@@ -104,21 +102,39 @@ if prompt := st.chat_input("What would you like to know about LLMs?"):
 
     # Get response from QA chain
     with st.spinner("Thinking..."):
-        response = qa.invoke(prompt)
+        result = qa({"query": prompt})
+        response = result['result']
+        source_documents = result['source_documents']
 
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
         st.markdown(response)
-        st.markdown("**Note:** Source documents are not automatically provided in this version.")
+        st.markdown("**Sources:**")
+        
+        # Use a set to keep track of unique content
+        seen_content = set()
+        unique_sources = []
+        
+        for doc in source_documents:
+            # Use the first 100 characters as a unique identifier
+            content_id = doc.page_content[:100]
+            if content_id not in seen_content:
+                seen_content.add(content_id)
+                unique_sources.append(doc)
+        
+        for doc in unique_sources:
+            st.markdown(f"- Content: {doc.page_content[:100]}...")
+            st.markdown(f"  Source: {doc.metadata['source']}")
+            st.markdown(f"  Metadata: {doc.metadata}")
 
     # Add assistant response to chat history
     st.session_state.messages.append({"role": "assistant", "content": response})
 
 # Optional: Add a way to view the contents of the vector store
-if st.button("View Vector Store Contents"):
-    st.write("Vector Store Contents:")
-    results = loaded_vectorstore.similarity_search("", k=5)  # Get 5 random documents
-    for doc in results:
-        st.write(f"Content: {doc.page_content[:100]}...")
-        st.write(f"Metadata: {doc.metadata}")
-        st.write("---")
+# if st.button("View Vector Store Contents"):
+#     st.write("Vector Store Contents:")
+#     results = loaded_vectorstore.similarity_search("query", k=5)
+#     for doc in results:
+#         st.write(f"Content: {doc.page_content[:100]}...")
+#         st.write(f"Metadata: {doc.metadata}")
+#         st.write("---")
