@@ -1,4 +1,4 @@
-# LLM Tutor 🤖📚
+# LLM Tutor 🤖📚 - [DEMO 🎬](https://www.youtube.com/watch?v=k_jEBhGScaA)
 Python | Langchain | Streamlit | Anaconda | ChromaDB | Scraping
 
 ## About 🌟
